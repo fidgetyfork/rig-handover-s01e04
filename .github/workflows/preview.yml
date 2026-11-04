@@ -1,0 +1,51 @@
+# Preview for review (plan § 3, ADR 0003). Saves /digest/2026-10-28 as one HTML file and deploys
+# it to GitHub Pages from a build artifact, so the preview is never committed. LANE_MARKER comes
+# from the repo secret of the same name (masked in public logs); delete the secret and run again to take it off (§ 4).
+name: preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm install --no-package-lock --no-audit --no-fund
+      - name: Save /digest/2026-10-28 as one HTML file
+        env:
+          LANE_MARKER: ${{ secrets.LANE_MARKER }}
+          PORT: 8787
+        run: |
+          npx tsx src/server.ts &
+          for i in $(seq 30); do curl -sf http://localhost:8787/health && break; sleep 1; done
+          mkdir -p _site
+          curl -sf http://localhost:8787/digest/2026-10-28 -o _site/index.html
+          kill %1
+          grep -q 'class="marker"' _site/index.html && wc -c _site/index.html
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+          retention-days: 1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
